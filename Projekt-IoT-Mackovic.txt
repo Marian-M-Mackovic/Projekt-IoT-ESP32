@@ -1,0 +1,38 @@
+Projekt - IoT - RK 2023 - Detektor vzdialenosti s premietanim aktualnej vziadlenosti na displeji
+a s funkciou zaslania upozornenia do mailovej schranky pri detekcii objektu v stanovenom rozsahu
+vzdialenosti od senzora (30 - 50 cm).
+
+
+
+Cieľ: Prostredníctvom ultrazvukového senzora určiť vzdialenosť
+a premietnuť ju na displeji a zároveň nastaviť upozornenie zaslaním
+(prijatím) mailu do schránky, pokiaľ senzor zaznamená "objekt",
+ktorý vstúpi do dráhy jeho snímania v rozmedzí vzdialenosti 30 - 50 cm.
+
+
+Komponenty:
+Round Hole Bread Board
+NODE MCU ESP32
+Senzor - ultrazvukový HC-SRO1
+Displej LCD - 4-riadkový, 20 s prevodníkom
+Kábliky 8 ks (4 M-F, 4 F-F)
+Kábel - USB A - USB mini
+
+
+Nutné kroky:
+
+    Nastavenie detekcie vzdialenosti senzorom a jej "vypisovanie" na displej.
+    Nastavenie mailovej notifikácie po splnení určitých podmienok.
+
+
+
+Stručný opis
+
+Program zaisťuje, že senzor sníma vzdialenosť pred sebou v sekundových intervaloch
+a túto vzdialenosť "vypisuje" na displej. Pokiaľ senzor zaznamená zmenu vzdialenosti
+od senzora v rozsahu 30 cm - 50 cm, napojí sa na server a odošle mailovú správu na
+predvolenú mailovú adresu (v tomto prípade sú obe adresy totožné).
+Po opätovnej zmene zaznamenávanej vzdialenosti mimo stanoveného rozsahu
+(vystúpením objektu z tejto "zóny") je táto vzdialenosť opäť vypisovaná na displej.
+Nové upozornenie na mail je odoslané až potom, ako sa opäť splní podmienka "narušenia"
+stanovenej zóny (vzdialenosti).
