@@ -1,0 +1,211 @@
+/*
+Projekt - IoT - RK 2023 - Detektor vzdialenosti s premietanim aktualnej vziadlenosti na displeji
+a s funkciou zaslania upozornenia do mailovej schranky pri detekcii objektu v stanovenom rozsahu
+vzdialenosti od senzora (30 - 50 cm).
+*/
+
+
+#include <Arduino.h>
+#if defined(ESP32)
+  #include <WiFi.h>
+#elif defined(ESP8266)
+  #include <ESP8266WiFi.h>
+#endif
+#include <ESP_Mail_Client.h>
+#include <LiquidCrystal_I2C.h>
+
+#define WIFI_SSID "HUAWEI-ExA9-2G"
+#define WIFI_PASSWORD "tS7794V6"
+
+#define SMTP_HOST "smtp.gmail.com"
+#define SMTP_PORT 465
+
+/* The sign in credentials */
+#define AUTHOR_EMAIL "marian.mackovic@gmail.com"
+#define AUTHOR_PASSWORD "khzvextgdjeelqdh"
+
+/* Recipient's email*/
+#define RECIPIENT_EMAIL "marian.mackovic@gmail.com"
+
+#define Riadok_1      0
+#define Riadok_2      1
+#define Riadok_3      2
+#define Riadok_4      3
+
+#define Riadky        4			// pocet riadkov LCD displeja
+#define Znaky         20		// pocet stlpcov LCD displeja
+#define AdresaLCD    0x27		// I2C adresa LCD displeja
+
+// definovanie I/O pinov ESP32
+#define TrigPin     19
+#define EchoPin		  18
+
+/* The SMTP Session object used for Email sending */
+SMTPSession smtp;
+// inicializacia triedy z kniznice
+LiquidCrystal_I2C lcd(AdresaLCD, Znaky, Riadky);  
+
+/* Callback function to get the Email sending status */
+void smtpCallback(SMTP_Status status);
+
+// globalne premenne
+long    odozva_us;
+double  vzdialenost;		// 2.0 az 300.0 cm
+unsigned long timer;
+unsigned long perioda = 1000;   // 1 s
+bool send_email = false;
+
+void setup(){
+// inicializacia I/O pinov
+  pinMode(TrigPin, OUTPUT); digitalWrite(TrigPin,LOW);
+  pinMode(EchoPin, INPUT);
+  
+// inicializacia LCD displeja
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0,Riadok_1);			// nastavi kurzor na 1.znak v 1.riadku
+  lcd.print("Vzdialenost prekazky");
+
+  Serial.begin(115200);
+  Serial.println();
+  Serial.print("Connecting to AP");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED){
+    Serial.print(".");
+    delay(200);
+  }
+  Serial.println("");
+  Serial.println("WiFi connected.");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+  Serial.println();
+
+  /** Enable the debug via Serial port
+   * none debug or 0
+   * basic debug or 1
+  */
+  smtp.debug(0);
+
+  /* Set the callback function to get the sending results */
+  smtp.callback(smtpCallback);
+
+  /* Declare the session config data */
+  ESP_Mail_Session session;
+
+  /* Set the session config */
+  session.server.host_name = SMTP_HOST;
+  session.server.port = SMTP_PORT;
+  session.login.email = AUTHOR_EMAIL;
+  session.login.password = AUTHOR_PASSWORD;
+  session.login.user_domain = "";
+
+  /* Declare the message class */
+  SMTP_Message message;
+
+  /* Set the message headers */
+  message.sender.name = "ESP";
+  message.sender.email = AUTHOR_EMAIL;
+  message.subject = "ESP32 Test projekt - mail";
+  message.addRecipient("Mayo", RECIPIENT_EMAIL);
+
+  /*Send HTML message*/
+  String htmlMsg = "<div style=\"color:#ff0000;\"><h1>UPOZORNENIE!</h1><p>Detektor zaznamenal narušenie priestoru.</p></div>";
+  message.html.content = htmlMsg.c_str();
+  message.html.content = htmlMsg.c_str();
+  message.text.charSet = "us-ascii";
+  message.html.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
+
+  /*
+  //Send raw text message
+  String textMsg = "Hello World! - Sent from ESP board";
+  message.text.content = textMsg.c_str();
+  message.text.charSet = "us-ascii";
+  message.text.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
+  
+  message.priority = esp_mail_smtp_priority::esp_mail_smtp_priority_low;
+  message.response.notify = esp_mail_smtp_notify_success | esp_mail_smtp_notify_failure | esp_mail_smtp_notify_delay;*/
+
+  /* Set the custom message header */
+  //message.addHeader("Message-ID: <abcde.fghij@gmail.com>");
+
+  timer = millis();
+
+while(true)   // nahrada loop() kvoli premennej session
+{
+ if (millis() - timer > perioda)
+ {
+   timer = millis();
+
+ //if (send_email == false) 
+ //{
+// Vytvorenie spustacieho impulzu na senzore HC-SR04, aby vyslal ultrazvukovu vlnu
+  digitalWrite(TrigPin, LOW); 
+  delayMicroseconds(2);
+  digitalWrite(TrigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TrigPin, LOW);	
+
+// Caka na impulz zo senzora HC-SR04, ked sa vrati ozvena ultrazvukovej vlny od prekazky
+// meria pocet mikrosekund, ktory zodpoveda dvojnasobku vzdialenosti senzora od prekazky
+  odozva_us = pulseIn(EchoPin, HIGH);
+
+// Vypocita vzdialenost v [cm] z nameranej odozvy v [us]
+  vzdialenost = ((double)odozva_us * 0.034) / 2;
+
+// Vypise hodnotu na displej, presnost je na 1 desatinne miesto
+  lcd.setCursor(0,Riadok_2); lcd.print(vzdialenost,1); lcd.print(" cm   ");
+
+ if (send_email== false && vzdialenost >= 30.0 && vzdialenost <= 50.0)
+  {
+  /* Connect to server with the session config */
+  if (!smtp.connect(&session))
+    break;
+
+  /* Start sending Email and close the session */
+  if (!MailClient.sendMail(&smtp, &message))
+    Serial.println("Error sending Email, " + smtp.errorReason());
+
+  send_email = true;
+  }
+ else if (vzdialenost < 30.0 || vzdialenost > 50.0)
+   send_email = false;
+ 
+ //} // koniec if (send_email)
+ } // koniec if(millis())
+
+} //koniec while ()
+
+} // koniec setup()
+
+void loop(){
+
+} // koniec loop()
+
+/* Callback function to get the Email sending status */
+void smtpCallback(SMTP_Status status){
+  /* Print the current status */
+  Serial.println(status.info());
+
+  /* Print the sending result */
+  if (status.success()){
+    Serial.println("----------------");
+    ESP_MAIL_PRINTF("Message sent success: %d\n", status.completedCount());
+    ESP_MAIL_PRINTF("Message sent failled: %d\n", status.failedCount());
+    Serial.println("----------------\n");
+    struct tm dt;
+
+    for (size_t i = 0; i < smtp.sendingResult.size(); i++){
+      /* Get the result item */
+      SMTP_Result result = smtp.sendingResult.getItem(i);
+      time_t ts = (time_t)result.timestamp;
+      localtime_r(&ts, &dt);
+
+      ESP_MAIL_PRINTF("Message No: %d\n", i + 1);
+      ESP_MAIL_PRINTF("Status: %s\n", result.completed ? "success" : "failed");
+      ESP_MAIL_PRINTF("Date/Time: %d/%d/%d %d:%d:%d\n", dt.tm_year + 1900, dt.tm_mon + 1, dt.tm_mday, dt.tm_hour, dt.tm_min, dt.tm_sec);
+      ESP_MAIL_PRINTF("Recipient: %s\n", result.recipients.c_str());
+      ESP_MAIL_PRINTF("Subject: %s\n", result.subject.c_str());
+    }
+    Serial.println("----------------\n");
+  }
+}
